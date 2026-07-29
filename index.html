@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Notion Sync Configuration</title>
+    <style>
+      body {
+        padding: var(--s3);
+        font-family: Roboto, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: var(--text-color);
+        background-color: var(--bg);
+      }
+      h2 {
+        margin-top: 0;
+        font-size: 1.2rem;
+        margin-bottom: var(--s2);
+      }
+      .card {
+        background: var(--card-bg);
+        border-radius: var(--card-border-radius);
+        padding: var(--s2);
+        box-shadow: var(--whiteframe-shadow-2dp);
+        margin-bottom: var(--s3);
+      }
+      .form-group {
+        margin-bottom: var(--s2);
+      }
+      label {
+        display: block;
+        margin-bottom: var(--s1);
+        font-weight: 500;
+      }
+      input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 8px;
+        box-sizing: border-box;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--text-color);
+      }
+      button {
+        background-color: var(--c-primary);
+        color: var(--c-primary-contrast);
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        box-shadow: var(--whiteframe-shadow-1dp);
+        margin-top: 8px;
+      }
+      button:hover {
+        background-color: var(--c-primary-dark);
+      }
+      button.secondary {
+        background-color: transparent;
+        color: var(--c-primary);
+        border: 1px solid var(--c-primary);
+        box-shadow: none;
+      }
+      button.secondary:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
+      button.action {
+        background-color: var(--c-accent);
+        color: var(--c-accent-contrast);
+        width: 100%;
+        font-size: 1.1em;
+        padding: 12px;
+      }
+      button.action:hover {
+        background-color: var(--c-accent-dark);
+      }
+      .mapping-row {
+        display: flex;
+        gap: var(--s2);
+        margin-bottom: var(--s2);
+        align-items: center;
+      }
+      select {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--text-color);
+      }
+      .remove-btn {
+        background-color: var(--c-warn);
+        color: var(--c-warn-contrast);
+        padding: 8px;
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <button id="syncNowBtn" class="action" style="width: 100%; margin-bottom: 4px;">🔄 Sync Notion Now</button>
+      <div id="syncStatusText" style="font-size: 0.9em; color: var(--c-accent); text-align: center;"></div>
+    </div>
+
+    <div class="card">
+      <h2>General Settings</h2>
+      <div class="form-group">
+        <label>Auto-Sync Frequency (minutes)</label>
+        <input type="number" id="syncFrequency" value="1" min="1" max="60" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Notion Integration Credentials</h2>
+      
+      <details style="margin-bottom: var(--s2); font-size: 0.9em; background: rgba(0,0,0,0.05); padding: var(--s2); border-radius: 4px;">
+        <summary style="cursor: pointer; font-weight: 500; color: var(--c-primary);">How to get this token?</summary>
+        <div style="margin-top: var(--s2); line-height: 1.4;">
+          <strong>Step 1: Create a connection</strong>
+          <ol style="margin-top: 4px; padding-left: 20px;">
+            <li>Go to <a href="https://www.notion.so/my-integrations" target="_blank" style="color: var(--c-primary);">Notion Integrations</a>.</li>
+            <li>Click <strong>New connection</strong>.</li>
+            <li>Name it (e.g. "Super Productivity Sync").</li>
+            <li>For <strong>Authentication method</strong>, select <strong>Access token</strong>.</li>
+            <li>Click <strong>Create connection</strong> and copy the token.</li>
+          </ol>
+          <strong>Step 2: Share your Database</strong>
+          <ol style="margin-top: 4px; padding-left: 20px;">
+            <li>Go to the Notion database you want to sync.</li>
+            <li>Click the three dots "..." in the top right.</li>
+            <li>Click "Connect to" (or "Add connections") and select your connection.</li>
+            <li>Confirm to give the connection access to your database.</li>
+          </ol>
+        </div>
+      </details>
+
+      <div class="form-group">
+        <label>Access Token</label>
+        <input type="password" id="notionToken" placeholder="secret_xxxxxxxxxxxxxxxx" />
+      </div>
+      <button id="saveAuthBtn">Save Credentials & Connect</button>
+      <div id="authStatus" style="margin-top: var(--s1); font-size: 0.9em; color: var(--c-accent);"></div>
+    </div>
+
+    <div class="card">
+      <h2>List Mappings</h2>
+      <p style="font-size: 0.9em; margin-top: 0;">Map a Notion Database to a Super Productivity Project.</p>
+      
+      <div id="mappingsContainer"></div>
+      
+      <div style="display: flex; justify-content: space-between; margin-top: var(--s2);">
+        <button id="addMappingBtn" class="secondary" style="margin-top: 0;">Add Mapping</button>
+        <button id="saveMappingsBtn" style="margin-top: 0;">Save Mappings</button>
+      </div>
+    </div>
+
+    <script>
+      let config = {};
+      let spProjects = [];
+      let notionDatabases = [];
+      let debugLogs = [];
+      
+      function logDebug(msg) {
+        const time = new Date().toISOString();
+        const line = `[${time}] ${msg}`;
+        console.log(line);
+        debugLogs.push(line);
+      }
+      
+      const STORAGE_KEY = 'notion_sync_config';
+
+      window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'NOTION_SYNC_RESULT') {
+          logDebug('Sync Result: ' + event.data.message);
+          const statusEl = document.getElementById('syncStatusText');
+          if (statusEl) {
+            statusEl.textContent = event.data.message;
+            // clear after 10 seconds
+            setTimeout(() => {
+              if (statusEl.textContent === event.data.message) {
+                statusEl.textContent = '';
+              }
+            }, 10000);
+          }
+        }
+        if (event.data && event.data.type === 'NOTION_HOST_LOG') {
+          logDebug('[HOST] ' + event.data.message);
+        }
+      });
+
+      async function loadConfig() {
+        return new Promise((resolve) => {
+          let resolved = false;
+          
+          const fallback = () => {
+            if (resolved) return;
+            resolved = true;
+            try {
+              const stored = localStorage.getItem(STORAGE_KEY);
+              resolve(stored ? JSON.parse(stored) : {});
+            } catch (e) { resolve({}); }
+          };
+          
+          const timeout = setTimeout(fallback, 1000); // 1s fallback to localStorage
+          
+          const listener = (event) => {
+            if (event.data && event.data.type === 'NOTION_CONFIG_DATA') {
+              if (resolved) return;
+              resolved = true;
+              clearTimeout(timeout);
+              window.removeEventListener('message', listener);
+              if (event.data.hostLogs && event.data.hostLogs.length > 0) {
+                event.data.hostLogs.forEach(log => logDebug('[HOST] ' + log));
+              }
+              if (event.data.spProjects) {
+                spProjects = event.data.spProjects;
+              }
+              resolve(event.data.config || {});
+            }
+          };
+          window.addEventListener('message', listener);
+          try {
+            window.parent.postMessage({ type: 'NOTION_GET_CONFIG' }, '*');
+          } catch (e) {
+            logDebug('postMessage error: ' + e);
+            fallback();
+          }
+        });
+      }
+
+      async function saveConfig() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+        } catch(e) { logDebug('localStorage set error: ' + e); }
+        try {
+          window.parent.postMessage({ type: 'NOTION_SAVE_CONFIG', config: config }, '*');
+        } catch (e) {
+          logDebug('postMessage save error: ' + e);
+        }
+      }
+
+      async function refreshSPProjects() {
+        return new Promise((resolve) => {
+          let resolved = false;
+          const listener = (event) => {
+            if (event.data && event.data.type === 'NOTION_CONFIG_DATA') {
+              if (resolved) return;
+              resolved = true;
+              window.removeEventListener('message', listener);
+              if (event.data.spProjects) {
+                spProjects = event.data.spProjects;
+              }
+              resolve();
+            }
+          };
+          window.addEventListener('message', listener);
+          try {
+            window.parent.postMessage({ type: 'NOTION_GET_CONFIG' }, '*');
+          } catch(e) { resolve(); }
+          setTimeout(() => { 
+            if (!resolved) { 
+              resolved = true; 
+              window.removeEventListener('message', listener); 
+              resolve(); 
+            } 
+          }, 1000);
+        });
+      }
+
+      async function init() {
+        // Add Download Log Button dynamically first so it's always available
+        const logContainer = document.createElement('div');
+        logContainer.style.marginTop = '15px';
+        
+        const logBtn = document.createElement('button');
+        logBtn.textContent = 'View Debug Log';
+        logBtn.className = 'button';
+        logBtn.style.backgroundColor = '#ff4081';
+        
+        const logOutput = document.createElement('pre');
+        logOutput.style.display = 'none';
+        logOutput.style.fontSize = '10px';
+        logOutput.style.maxHeight = '200px';
+        logOutput.style.overflowY = 'auto';
+        logOutput.style.background = 'rgba(0,0,0,0.1)';
+        logOutput.style.padding = '8px';
+        logOutput.style.marginTop = '8px';
+        
+        logBtn.onclick = () => {
+          logOutput.textContent = debugLogs.join('\n');
+          logOutput.style.display = logOutput.style.display === 'none' ? 'block' : 'none';
+        };
+        
+        logContainer.appendChild(logBtn);
+        logContainer.appendChild(logOutput);
+        document.body.appendChild(logContainer);
+
+        logDebug('UI Initializing');
+        
+        try {
+          config = await loadConfig();
+          
+          document.getElementById('notionToken').value = config.notionToken || '';
+          document.getElementById('syncFrequency').value = config.syncFrequency || 1;
+          
+          if (config.notionToken) {
+            document.getElementById('authStatus').textContent = 'Status: Authenticated \u2714\uFE0F';
+            await fetchNotionDatabases();
+            renderMappings();
+          } else {
+            document.getElementById('authStatus').textContent = 'Status: Not Authenticated';
+          }
+          
+          logDebug(`Loaded ${spProjects.length} SP projects from host`);
+          // Redraw mappings in case spProjects just loaded
+          if (config.accessToken) renderMappings();
+        } catch (e) {
+          logDebug('Init error: ' + e);
+        }
+
+        // Attach all Event Listeners
+        try {
+          document.getElementById('saveAuthBtn').addEventListener('click', async () => {
+            logDebug('Saving auth credentials...');
+            config.notionToken = document.getElementById('notionToken').value.trim();
+            config.syncFrequency = parseInt(document.getElementById('syncFrequency').value) || 1;
+            
+            await saveConfig();
+            if (PluginAPI && PluginAPI.showSnack) PluginAPI.showSnack({ msg: 'Credentials saved!', type: 'SUCCESS' });
+            
+            if (config.notionToken) {
+              document.getElementById('authStatus').textContent = 'Status: Authenticated \u2714\uFE0F';
+              await fetchNotionDatabases();
+              renderMappings();
+            }
+          });
+
+          document.getElementById('syncNowBtn').addEventListener('click', async () => {
+            logDebug('Manual Sync requested');
+            document.getElementById('syncStatusText').textContent = 'Syncing...';
+            if (PluginAPI && PluginAPI.showSnack) PluginAPI.showSnack({ msg: 'Manual Sync triggered (see background process)', type: 'INFO' });
+            config.lastManualSyncRequest = Date.now();
+            await saveConfig();
+          });
+
+          document.getElementById('addMappingBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('addMappingBtn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Refreshing databases & projects...';
+            btn.disabled = true;
+            try {
+              if (config.notionToken) {
+                await fetchNotionDatabases();
+              }
+              await refreshSPProjects();
+            } catch (e) {
+              logDebug('Refresh error: ' + e.message);
+            }
+            btn.textContent = originalText;
+            btn.disabled = false;
+
+            if (!config.mappings) config.mappings = [];
+            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', notesMapping: '' });
+            renderMappings();
+          });
+
+          document.getElementById('saveMappingsBtn').addEventListener('click', async () => {
+            if (!config.mappings) config.mappings = [];
+            config.mappings = config.mappings.filter(m => m.notionDbId && m.spProjectId);
+            await saveConfig();
+            if (PluginAPI && PluginAPI.showSnack) PluginAPI.showSnack({ msg: 'Mappings saved!', type: 'SUCCESS' });
+            logDebug('Mappings saved: ' + JSON.stringify(config.mappings));
+          });
+        } catch(e) {
+          logDebug('Event Listener attachment error: ' + e);
+        }
+      }
+
+      async function fetchNotionDatabases() {
+        logDebug('Fetching Notion Databases...');
+        try {
+          const res = await fetch('https://api.notion.com/v1/search', {
+            method: 'POST',
+            headers: { 
+              'Authorization': `Bearer ${config.notionToken}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ filter: { value: 'database', property: 'object' } })
+          });
+          logDebug(`Response Status: ${res.status}`);
+          const text = await res.text();
+          logDebug(`Response Body: ${text.substring(0, 150)}...`);
+          
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch(e) {
+            throw new Error(`Failed to parse JSON. Body: ${text.substring(0, 50)}`);
+          }
+
+          if (data && data.results) {
+            notionDatabases = data.results;
+            logDebug(`Fetched ${notionDatabases.length} Notion databases`);
+          } else {
+            throw new Error(data.message || data.error || 'Failed to fetch databases');
+          }
+        } catch (e) {
+          logDebug('Fetch Notion DB error: ' + e.message);
+          document.getElementById('authStatus').textContent = 'Status: Error fetching databases - ' + e.message + ' (Check Debug Log)';
+        }
+      }
+
+
+
+      function renderMappings() {
+        const container = document.getElementById('mappingsContainer');
+        container.innerHTML = '';
+        
+        if (!config.mappings) config.mappings = [];
+        
+        // Migrate old importStatus string to importStatuses array
+        config.mappings.forEach(m => {
+          if (m.importStatus && (!m.importStatuses || m.importStatuses.length === 0)) {
+            m.importStatuses = [m.importStatus];
+          }
+        });
+        
+        config.mappings.forEach((mapping, index) => {
+          const card = document.createElement('div');
+          card.style.border = '1px solid var(--divider-color)';
+          card.style.padding = 'var(--s2)';
+          card.style.marginBottom = 'var(--s2)';
+          card.style.borderRadius = '4px';
+          
+          const getTitle = (db) => db.title && db.title.length ? db.title.map(t => t.plain_text).join('') : (db.id || 'Untitled');
+
+          const dbSelect = document.createElement('select');
+          dbSelect.style.width = '100%';
+          dbSelect.style.marginBottom = '8px';
+          dbSelect.innerHTML = `<option value="">-- Select Notion Database --</option>` + 
+            notionDatabases.map(db => `<option value="${db.id}" ${mapping.notionDbId === db.id ? 'selected' : ''}>${getTitle(db)}</option>`).join('');
+          dbSelect.onchange = (e) => { 
+            config.mappings[index].notionDbId = e.target.value;
+            config.mappings[index].statusProperty = '';
+            config.mappings[index].statusPropertyType = '';
+            config.mappings[index].importStatuses = []; 
+            config.mappings[index].completeStatus = '';
+            config.mappings[index].notesMapping = '';
+            renderMappings();
+          };
+          
+          const spSelect = document.createElement('select');
+          spSelect.style.width = '100%';
+          spSelect.style.marginBottom = '8px';
+          spSelect.innerHTML = `<option value="">-- Select SP Project --</option>` + 
+            spProjects.map(p => `<option value="${p.id}" ${mapping.spProjectId === p.id ? 'selected' : ''}>${p.title}</option>`).join('');
+          spSelect.onchange = (e) => { config.mappings[index].spProjectId = e.target.value; };
+
+          card.appendChild(dbSelect);
+          card.appendChild(spSelect);
+
+          const selectedDb = notionDatabases.find(db => db.id === mapping.notionDbId);
+          if (selectedDb && selectedDb.properties) {
+            const validProps = Object.keys(selectedDb.properties).filter(key => {
+              const type = selectedDb.properties[key].type;
+              return type === 'status' || type === 'select';
+            });
+
+            const statusPropSelect = document.createElement('select');
+            statusPropSelect.style.width = '100%';
+            statusPropSelect.style.marginBottom = '8px';
+            statusPropSelect.innerHTML = `<option value="">-- Select Status Property --</option>` + 
+              validProps.map(prop => `<option value="${prop}" ${mapping.statusProperty === prop ? 'selected' : ''}>${prop} (${selectedDb.properties[prop].type})</option>`).join('');
+            statusPropSelect.onchange = (e) => { 
+              config.mappings[index].statusProperty = e.target.value; 
+              config.mappings[index].statusPropertyType = e.target.value ? selectedDb.properties[e.target.value].type : '';
+              config.mappings[index].importStatuses = []; 
+              config.mappings[index].completeStatus = '';
+              renderMappings();
+            };
+            card.appendChild(statusPropSelect);
+
+            if (mapping.statusProperty && selectedDb.properties[mapping.statusProperty]) {
+              const propConfig = selectedDb.properties[mapping.statusProperty];
+              const options = propConfig[propConfig.type]?.options || [];
+
+              const importLabel = document.createElement('label');
+              importLabel.textContent = 'Import Statuses (Select multiple):';
+              importLabel.style.fontSize = '0.85em';
+              card.appendChild(importLabel);
+
+              const importContainer = document.createElement('div');
+              importContainer.style.marginBottom = '8px';
+              importContainer.style.maxHeight = '150px';
+              importContainer.style.overflowY = 'auto';
+              importContainer.style.border = '1px solid var(--divider-color)';
+              importContainer.style.padding = '4px';
+              importContainer.style.borderRadius = '4px';
+              
+              if (!mapping.importStatuses) mapping.importStatuses = [];
+
+              // Add a Blank/Empty option first
+              const emptyLabel = document.createElement('label');
+              emptyLabel.style.display = 'block';
+              emptyLabel.style.fontWeight = 'normal';
+              emptyLabel.style.marginBottom = '4px';
+              emptyLabel.style.cursor = 'pointer';
+              
+              const emptyCb = document.createElement('input');
+              emptyCb.type = 'checkbox';
+              emptyCb.value = '__EMPTY__';
+              emptyCb.checked = mapping.importStatuses.includes('__EMPTY__');
+              emptyCb.style.marginRight = '8px';
+              emptyCb.onchange = (e) => {
+                if (e.target.checked) {
+                  if (!config.mappings[index].importStatuses.includes('__EMPTY__')) {
+                    config.mappings[index].importStatuses.push('__EMPTY__');
+                  }
+                } else {
+                  config.mappings[index].importStatuses = config.mappings[index].importStatuses.filter(s => s !== '__EMPTY__');
+                }
+              };
+              
+              emptyLabel.appendChild(emptyCb);
+              emptyLabel.appendChild(document.createTextNode('[Blank / Empty]'));
+              importContainer.appendChild(emptyLabel);
+
+              options.forEach(opt => {
+                const label = document.createElement('label');
+                label.style.display = 'block';
+                label.style.fontWeight = 'normal';
+                label.style.marginBottom = '4px';
+                label.style.cursor = 'pointer';
+                
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = opt.name;
+                cb.checked = mapping.importStatuses.includes(opt.name);
+                cb.style.marginRight = '8px';
+                cb.onchange = (e) => {
+                  if (e.target.checked) {
+                    if (!config.mappings[index].importStatuses.includes(opt.name)) {
+                      config.mappings[index].importStatuses.push(opt.name);
+                    }
+                  } else {
+                    config.mappings[index].importStatuses = config.mappings[index].importStatuses.filter(s => s !== opt.name);
+                  }
+                };
+                
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(opt.name));
+                importContainer.appendChild(label);
+              });
+              card.appendChild(importContainer);
+
+              const completeLabel = document.createElement('label');
+              completeLabel.textContent = 'Complete Status (Set when done in SP):';
+              completeLabel.style.fontSize = '0.85em';
+              card.appendChild(completeLabel);
+
+              const completeSelect = document.createElement('select');
+              completeSelect.style.width = '100%';
+              completeSelect.style.marginBottom = '8px';
+              completeSelect.innerHTML = `<option value="">-- Select Complete Status --</option>` + 
+                options.map(opt => `<option value="${opt.name}" ${mapping.completeStatus === opt.name ? 'selected' : ''}>${opt.name}</option>`).join('');
+              completeSelect.onchange = (e) => { config.mappings[index].completeStatus = e.target.value; };
+              card.appendChild(completeSelect);
+              
+              const notesPropSelect = document.createElement('select');
+              notesPropSelect.style.width = '100%';
+              notesPropSelect.style.marginBottom = '8px';
+              const allProps = Object.keys(selectedDb.properties).sort();
+              notesPropSelect.innerHTML = `<option value="">-- None (Just add Notion link) --</option>` +
+                `<option value="__PAGE_BODY__" ${mapping.notesMapping === '__PAGE_BODY__' ? 'selected' : ''}>[Page Body] (Warning: Slower sync)</option>` +
+                allProps.map(prop => `<option value="${prop}" ${mapping.notesMapping === prop ? 'selected' : ''}>${prop} (${selectedDb.properties[prop].type})</option>`).join('');
+              
+              notesPropSelect.onchange = (e) => { 
+                config.mappings[index].notesMapping = e.target.value; 
+                renderMappings();
+              };
+              
+              const notesPropContainer = document.createElement('div');
+              notesPropContainer.style.marginBottom = '8px';
+              notesPropContainer.innerHTML = `<label style="display:block; margin-bottom:4px; font-size:0.85em;">Task Notes Mapping (Optional):</label>`;
+              notesPropContainer.appendChild(notesPropSelect);
+              card.appendChild(notesPropContainer);
+            }
+          }
+          
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'remove-btn';
+          removeBtn.innerHTML = 'Remove Mapping';
+          removeBtn.style.marginTop = '8px';
+          removeBtn.onclick = () => {
+            config.mappings.splice(index, 1);
+            renderMappings();
+          };
+          card.appendChild(removeBtn);
+          
+          container.appendChild(card);
+        });
+      }
+
+      init();
+    </script>
+  </body>
+</html>
