@@ -358,7 +358,7 @@
             btn.disabled = false;
 
             if (!config.mappings) config.mappings = [];
-            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', notesMapping: '' });
+            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', deleteStatus: '', notesMapping: '', pushNewTasks: false, defaultPushStatus: '', pushNotesMapping: '' });
             renderMappings();
           });
 
@@ -564,6 +564,19 @@
                 options.map(opt => `<option value="${opt.name}" ${mapping.completeStatus === opt.name ? 'selected' : ''}>${opt.name}</option>`).join('');
               completeSelect.onchange = (e) => { config.mappings[index].completeStatus = e.target.value; };
               card.appendChild(completeSelect);
+
+              const deleteLabel = document.createElement('label');
+              deleteLabel.textContent = 'Delete Status (Delete task in SP if set to this in Notion):';
+              deleteLabel.style.fontSize = '0.85em';
+              card.appendChild(deleteLabel);
+
+              const deleteSelect = document.createElement('select');
+              deleteSelect.style.width = '100%';
+              deleteSelect.style.marginBottom = '8px';
+              deleteSelect.innerHTML = `<option value="">-- None --</option>` + 
+                options.map(opt => `<option value="${opt.name}" ${mapping.deleteStatus === opt.name ? 'selected' : ''}>${opt.name}</option>`).join('');
+              deleteSelect.onchange = (e) => { config.mappings[index].deleteStatus = e.target.value; };
+              card.appendChild(deleteSelect);
               
               const notesPropSelect = document.createElement('select');
               notesPropSelect.style.width = '100%';
@@ -583,6 +596,63 @@
               notesPropContainer.innerHTML = `<label style="display:block; margin-bottom:4px; font-size:0.85em;">Task Notes Mapping (Optional):</label>`;
               notesPropContainer.appendChild(notesPropSelect);
               card.appendChild(notesPropContainer);
+
+              // Push new SP tasks logic
+              const pushContainer = document.createElement('div');
+              pushContainer.style.marginTop = '12px';
+              pushContainer.style.marginBottom = '8px';
+              pushContainer.style.padding = '8px';
+              pushContainer.style.background = 'rgba(0,0,0,0.03)';
+              pushContainer.style.borderRadius = '4px';
+              
+              const pushLabel = document.createElement('label');
+              pushLabel.style.display = 'flex';
+              pushLabel.style.alignItems = 'center';
+              pushLabel.style.cursor = 'pointer';
+              pushLabel.style.marginBottom = mapping.pushNewTasks ? '8px' : '0';
+              pushLabel.style.fontWeight = '500';
+              
+              const pushCb = document.createElement('input');
+              pushCb.type = 'checkbox';
+              pushCb.checked = !!mapping.pushNewTasks;
+              pushCb.style.marginRight = '8px';
+              pushCb.onchange = (e) => {
+                config.mappings[index].pushNewTasks = e.target.checked;
+                renderMappings();
+              };
+              
+              pushLabel.appendChild(pushCb);
+              pushLabel.appendChild(document.createTextNode('Push new SP tasks to Notion'));
+              pushContainer.appendChild(pushLabel);
+              
+              if (mapping.pushNewTasks) {
+                const pushStatusLabel = document.createElement('label');
+                pushStatusLabel.textContent = 'Default Notion Status:';
+                pushStatusLabel.style.fontSize = '0.85em';
+                pushContainer.appendChild(pushStatusLabel);
+                
+                const pushStatusSelect = document.createElement('select');
+                pushStatusSelect.style.width = '100%';
+                pushStatusSelect.innerHTML = `<option value="">-- Select Default Status --</option>` + 
+                  options.map(opt => `<option value="${opt.name}" ${mapping.defaultPushStatus === opt.name ? 'selected' : ''}>${opt.name}</option>`).join('');
+                pushStatusSelect.onchange = (e) => { config.mappings[index].defaultPushStatus = e.target.value; };
+                pushContainer.appendChild(pushStatusSelect);
+                
+                const pushNotesLabel = document.createElement('label');
+                pushNotesLabel.textContent = 'Push Notes Mapping (Optional):';
+                pushNotesLabel.style.fontSize = '0.85em';
+                pushNotesLabel.style.marginTop = '8px';
+                pushContainer.appendChild(pushNotesLabel);
+                
+                const pushNotesSelect = document.createElement('select');
+                pushNotesSelect.style.width = '100%';
+                pushNotesSelect.innerHTML = `<option value="">-- None --</option>` +
+                  `<option value="__PAGE_BODY__" ${mapping.pushNotesMapping === '__PAGE_BODY__' ? 'selected' : ''}>[Page Body]</option>` +
+                  allProps.map(prop => `<option value="${prop}" ${mapping.pushNotesMapping === prop ? 'selected' : ''}>${prop} (${selectedDb.properties[prop].type})</option>`).join('');
+                pushNotesSelect.onchange = (e) => { config.mappings[index].pushNotesMapping = e.target.value; };
+                pushContainer.appendChild(pushNotesSelect);
+              }
+              card.appendChild(pushContainer);
             }
           }
           

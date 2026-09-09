@@ -1,13 +1,13 @@
 {
   "id": "notion-sync",
   "name": "Notion Sync",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Syncs your Super Productivity projects with Notion databases.",
   "manifestVersion": 1,
   "minSupVersion": "14.0.0",
   "iFrame": true,
   "sidePanel": true,
-  "permissions": ["http", "getTasks", "updateTask", "addTask"],
+  "permissions": ["http", "getTasks", "updateTask", "addTask", "deleteTask"],
   "hooks": ["taskComplete"],
   "allowedHosts": ["api.notion.com", "corsproxy.io"],
   "icon": "table_chart"

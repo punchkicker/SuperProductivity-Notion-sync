@@ -178,6 +178,7 @@ async function runSync() {
     let importedCount = 0;
     let completedCount = 0;
     let resolvedOfflineCount = 0;
+    let totalPushedCount = 0;
     
     for (let i = 0; i < mappings.length; i++) {
       try {
@@ -308,11 +309,33 @@ async function runSync() {
               const stillActive = items.find(item => `notion_${mapping.notionDbId}_${item.id}` === tIssueId);
               if (!stillActive) {
                 try {
-                  await PluginAPI.updateTask(t.id, { isDone: true });
-                  PluginAPI.showSnack({ msg: `Task completed via Notion sync`, type: 'SUCCESS' });
-                  completedCount++;
+                  let shouldDelete = false;
+                  if (mapping.deleteStatus) {
+                    const pageId = tIssueId.split('_')[2];
+                    const page = await notionApi(`/pages/${pageId}`, 'GET', null, token);
+                    await delay(350); // Rate limit protection
+                    const propData = page.properties[statusProp];
+                    if (propData) {
+                      let currentStatus = '';
+                      if (propData.type === 'status' && propData.status) currentStatus = propData.status.name;
+                      else if (propData.type === 'select' && propData.select) currentStatus = propData.select.name;
+                      
+                      if (currentStatus === mapping.deleteStatus) {
+                        shouldDelete = true;
+                      }
+                    }
+                  }
+                  
+                  if (shouldDelete) {
+                    await PluginAPI.deleteTask(t.id);
+                    PluginAPI.showSnack({ msg: `Task deleted via Notion sync`, type: 'INFO' });
+                  } else {
+                    await PluginAPI.updateTask(t.id, { isDone: true });
+                    PluginAPI.showSnack({ msg: `Task completed via Notion sync`, type: 'SUCCESS' });
+                    completedCount++;
+                  }
                 } catch(e) {
-                  console.error('Failed to complete SP task', e);
+                  console.error('Failed to complete/delete SP task', e);
                 }
               }
             }
@@ -342,6 +365,82 @@ async function runSync() {
             }
           }
         }
+
+        // 5. Push new SP tasks to Notion
+        if (mapping.pushNewTasks && mapping.defaultPushStatus) {
+          const newSpTasks = spTasks.filter(t => t.projectId === mapping.spProjectId && !t.isDone && extractId(t.title) === null);
+          
+          if (newSpTasks.length > 0) {
+            sendLog(`Found ${newSpTasks.length} new SP tasks to push to Notion.`);
+            
+            // Fetch DB schema to find the title property key
+            let titlePropKey = 'Name';
+            try {
+              const dbObj = await notionApi(`/databases/${mapping.notionDbId}`, 'GET', null, token);
+              for (const key in dbObj.properties) {
+                if (dbObj.properties[key].type === 'title') {
+                  titlePropKey = key;
+                  break;
+                }
+              }
+            } catch(err) {
+              sendLog(`Failed to fetch DB schema for title key: ${err.message}`);
+            }
+
+            for (const t of newSpTasks) {
+              try {
+                sendLog(`Pushing task "${t.title}" to Notion...`);
+                const createBody = {
+                  parent: { database_id: mapping.notionDbId },
+                  properties: {}
+                };
+                
+                // Set Title
+                createBody.properties[titlePropKey] = {
+                  title: [{ text: { content: t.title } }]
+                };
+                
+                // Set Status
+                if (mapping.statusPropertyType === 'status') {
+                  createBody.properties[statusProp] = { status: { name: mapping.defaultPushStatus } };
+                } else if (mapping.statusPropertyType === 'select') {
+                  createBody.properties[statusProp] = { select: { name: mapping.defaultPushStatus } };
+                }
+                
+                // Push Notes
+                if (mapping.pushNotesMapping && t.notes) {
+                  const safeNotes = t.notes.substring(0, 2000);
+                  if (mapping.pushNotesMapping === '__PAGE_BODY__') {
+                    createBody.children = [
+                      {
+                        object: 'block',
+                        type: 'paragraph',
+                        paragraph: { rich_text: [{ type: 'text', text: { content: safeNotes } }] }
+                      }
+                    ];
+                  } else {
+                    createBody.properties[mapping.pushNotesMapping] = {
+                      rich_text: [{ type: 'text', text: { content: safeNotes } }]
+                    };
+                  }
+                }
+                
+                const newPage = await notionApi('/pages', 'POST', createBody, token);
+                await delay(350); // Rate limit protection
+                
+                // Link back in SP
+                const issueIdStr = `notion_${mapping.notionDbId}_${newPage.id}`;
+                const newTitle = embedId(t.title, issueIdStr);
+                const appendedNotes = t.notes ? t.notes + `\n\n---\n\n[Open in Notion](${newPage.url})` : `[Open in Notion](${newPage.url})`;
+                
+                await PluginAPI.updateTask(t.id, { title: newTitle, notes: appendedNotes });
+                totalPushedCount++;
+              } catch(err) {
+                sendLog(`Failed to push SP task "${t.title}" to Notion: ${err.message}`);
+              }
+            }
+          }
+        }
       } catch (mappingErr) {
         sendLog(`Error processing mapping ${i + 1}: ${mappingErr.message}`);
         console.error('Mapping error', mappingErr);
@@ -349,23 +448,28 @@ async function runSync() {
     }
     
     if (iframeSource) {
-      iframeSource.postMessage({ 
-        type: 'NOTION_SYNC_RESULT', 
-        message: `Sync complete: ${importedCount} imported, ${completedCount} marked complete locally, ${resolvedOfflineCount} completed in Notion.` 
-      }, iframeOrigin);
+      try {
+        iframeSource.postMessage({ 
+          type: 'NOTION_SYNC_RESULT', 
+          message: `Sync complete: ${importedCount} imported, ${completedCount} marked complete locally, ${resolvedOfflineCount} completed in Notion, ${totalPushedCount} pushed to Notion.` 
+        }, iframeOrigin);
+      } catch (err) {}
     }
   } catch (e) {
     console.error('Error during background Notion sync', e);
     sendLog(`Sync Error: ${e.message}`);
     if (iframeSource) {
-      iframeSource.postMessage({ 
-        type: 'NOTION_SYNC_RESULT', 
-        message: `Sync failed: ${e.message}` 
-      }, iframeOrigin);
+      try {
+        iframeSource.postMessage({ 
+          type: 'NOTION_SYNC_RESULT', 
+          message: `Sync failed: ${e.message}` 
+        }, iframeOrigin);
+      } catch (err) {}
     }
+  } finally {
+    isSyncing = false;
+    sendLog('runSync finished');
   }
-  isSyncing = false;
-  sendLog('runSync finished');
 }
 
 // Register Hooks and Timers
