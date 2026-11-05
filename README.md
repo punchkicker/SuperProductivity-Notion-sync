@@ -8,6 +8,7 @@ Import tasks directly from any Notion database, optionally bring over descriptio
 - **Multi-Database Mapping:** Connect multiple Notion databases to different Super Productivity projects simultaneously.
 - **Custom Status Mapping:** Choose exactly which Notion statuses (e.g., "To Do", "In Progress", or even Blank) import into Super Productivity, and which status is applied when a task is completed.
 - **Deep Content Sync:** Pull specific database properties (like "Summary") or the entire block-based Page Body into Super Productivity's Notes field using a built-in Markdown converter.
+- **Subtask Sync:** Optionally import Notion database sub-items and page to-do checklists as native Super Productivity subtasks. Completing a checklist subtask in Super Productivity automatically checks off the corresponding to-do block in Notion, and sub-items stay in sync both ways like regular tasks.
 - **Offline Resolution:** Automatically syncs completions back to Notion even if the plugin was temporarily disabled or you were offline when completing tasks.
 
 ---
@@ -47,7 +48,8 @@ Notion requires a secret token so the plugin can securely read your databases.
 3. Click **Add Mapping** to link a Notion Database to a Super Productivity Project.
 4. Set up your desired import statuses and complete status.
 5. *(Optional)* Select a **Task Notes Mapping** to pull in a database description property, or pull in the full Notion Page Body. *(Note: Pulling the full page body adds a slight delay to respect Notion's API rate limits).*
-6. Click **Save Mappings** and then **Sync Now** to pull in your tasks!
+6. *(Optional)* Enable **Subtask Sync** options to import Notion sub-items and/or page to-do checklists as native Super Productivity subtasks. *(Note: Checklist import fetches page blocks, which adds a slight delay to respect Notion's API rate limits. Checklist check-state syncs from Notion at import time; completing a checklist subtask in Super Productivity updates Notion live.)*
+7. Click **Save Mappings** and then **Sync Now** to pull in your tasks!
 
 ---
 

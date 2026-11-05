@@ -358,7 +358,7 @@
             btn.disabled = false;
 
             if (!config.mappings) config.mappings = [];
-            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', deleteStatus: '', notesMapping: '', pushNewTasks: false, defaultPushStatus: '', pushNotesMapping: '' });
+            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', deleteStatus: '', notesMapping: '', pushNewTasks: false, defaultPushStatus: '', pushNotesMapping: '', syncSubItems: false, syncChecklist: false });
             renderMappings();
           });
 
@@ -596,6 +596,40 @@
               notesPropContainer.innerHTML = `<label style="display:block; margin-bottom:4px; font-size:0.85em;">Task Notes Mapping (Optional):</label>`;
               notesPropContainer.appendChild(notesPropSelect);
               card.appendChild(notesPropContainer);
+
+              // Subtask sync options
+              const subtaskContainer = document.createElement('div');
+              subtaskContainer.style.marginTop = '12px';
+              subtaskContainer.style.marginBottom = '8px';
+              subtaskContainer.style.padding = '8px';
+              subtaskContainer.style.background = 'rgba(0,0,0,0.03)';
+              subtaskContainer.style.borderRadius = '4px';
+
+              const subtaskHeader = document.createElement('label');
+              subtaskHeader.textContent = 'Subtask Sync:';
+              subtaskHeader.style.fontSize = '0.85em';
+              subtaskContainer.appendChild(subtaskHeader);
+
+              const mkSubtaskCb = (labelText, key) => {
+                const lbl = document.createElement('label');
+                lbl.style.display = 'flex';
+                lbl.style.alignItems = 'center';
+                lbl.style.cursor = 'pointer';
+                lbl.style.marginBottom = '4px';
+                lbl.style.fontWeight = 'normal';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = !!mapping[key];
+                cb.style.marginRight = '8px';
+                cb.onchange = (e) => { config.mappings[index][key] = e.target.checked; };
+                lbl.appendChild(cb);
+                lbl.appendChild(document.createTextNode(labelText));
+                return lbl;
+              };
+
+              subtaskContainer.appendChild(mkSubtaskCb('Import Notion sub-items as SP subtasks', 'syncSubItems'));
+              subtaskContainer.appendChild(mkSubtaskCb('Import page to-do checklists as SP subtasks', 'syncChecklist'));
+              card.appendChild(subtaskContainer);
 
               // Push new SP tasks logic
               const pushContainer = document.createElement('div');
