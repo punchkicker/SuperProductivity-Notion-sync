@@ -208,7 +208,7 @@ async function runSync() {
           : (mapping.importStatus ? [mapping.importStatus] : ['Not started']);
         const completeStatus = mapping.completeStatus || 'Done';
 
-        if (importStatuses.length === 0) {
+        if (importStatuses.length === 0 && mapping.statusPropertyType !== 'checkbox') {
           sendLog(`Skipping mapping ${i + 1}: no importStatuses`);
           continue;
         }
@@ -221,6 +221,10 @@ async function runSync() {
         sendLog(`Querying Notion for mapping ${i + 1} with ${importStatuses.length} statuses...`);
         while (hasMore) {
           const orConditions = [];
+          if (mapping.statusPropertyType === 'checkbox') {
+            // Checkbox property: import rows that are not checked off yet
+            orConditions.push({ property: statusProp, checkbox: { equals: false } });
+          } else {
           importStatuses.forEach(status => {
             if (status === '__EMPTY__') {
               if (mapping.statusPropertyType === 'select') {
@@ -236,6 +240,7 @@ async function runSync() {
               }
             }
           });
+          }
 
           const filterBody = {
             filter: {
@@ -456,7 +461,11 @@ async function runSync() {
                     updateBody.properties[statusProp] = { status: { name: completeStatus } };
                   } else if (propData.type === 'select') {
                     updateBody.properties[statusProp] = { select: { name: completeStatus } };
+                  } else if (propData.type === 'checkbox') {
+                    updateBody.properties[statusProp] = { checkbox: true };
                   }
+                  
+                  if (Object.keys(updateBody.properties).length === 0) continue;
                   
                   try {
                     await notionApi(`/pages/${pageId}`, 'PATCH', updateBody, token);
@@ -471,7 +480,7 @@ async function runSync() {
         }
 
         // 5. Push new SP tasks to Notion
-        if (mapping.pushNewTasks && mapping.defaultPushStatus) {
+        if (mapping.pushNewTasks && (mapping.defaultPushStatus || mapping.statusPropertyType === 'checkbox')) {
           const newSpTasks = spTasks.filter(t => t.projectId === mapping.spProjectId && !t.isDone && !t.parentId && extractId(t.title) === null);
           
           if (newSpTasks.length > 0) {
@@ -509,6 +518,8 @@ async function runSync() {
                   createBody.properties[statusProp] = { status: { name: mapping.defaultPushStatus } };
                 } else if (mapping.statusPropertyType === 'select') {
                   createBody.properties[statusProp] = { select: { name: mapping.defaultPushStatus } };
+                } else if (mapping.statusPropertyType === 'checkbox') {
+                  createBody.properties[statusProp] = { checkbox: false };
                 }
                 
                 // Push Notes
@@ -635,6 +646,8 @@ PluginAPI.registerHook(PluginAPI.Hooks.TASK_COMPLETE, async (payload) => {
           updateBody.properties[statusProp] = { status: { name: completeStatus } };
         } else if (propData.type === 'select') {
           updateBody.properties[statusProp] = { select: { name: completeStatus } };
+        } else if (propData.type === 'checkbox') {
+          updateBody.properties[statusProp] = { checkbox: true };
         } else {
           return;
         }
