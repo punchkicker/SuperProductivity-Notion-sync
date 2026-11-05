@@ -7,6 +7,7 @@ Import tasks directly from any Notion database, optionally bring over descriptio
 ## Features
 - **Multi-Database Mapping:** Connect multiple Notion databases to different Super Productivity projects simultaneously.
 - **Custom Status Mapping:** Choose exactly which Notion statuses (e.g., "To Do", "In Progress", or even Blank) import into Super Productivity, and which status is applied when a task is completed. Works with **Status**, **Select**, and **Checkbox** properties — with a checkbox, unchecked rows import as tasks and checking a task off in Super Productivity checks the box in Notion (and vice versa).
+- **Date Sync:** Optionally map a Notion date property (e.g. "Start date") so imported tasks arrive in Super Productivity already scheduled for that day or time — and tasks pushed from Super Productivity carry their due date back to Notion.
 - **Deep Content Sync:** Pull specific database properties (like "Summary") or the entire block-based Page Body into Super Productivity's Notes field using a built-in Markdown converter.
 - **Subtask Sync:** Optionally import Notion database sub-items and page to-do checklists as native Super Productivity subtasks. Completing a checklist subtask in Super Productivity automatically checks off the corresponding to-do block in Notion, and sub-items stay in sync both ways like regular tasks.
 - **Offline Resolution:** Automatically syncs completions back to Notion even if the plugin was temporarily disabled or you were offline when completing tasks.
@@ -47,9 +48,10 @@ Notion requires a secret token so the plugin can securely read your databases.
 2. Paste your Internal Integration Secret into the **Access Token** field and click **Save Credentials & Connect**. The plugin will securely fetch all databases you shared with it.
 3. Click **Add Mapping** to link a Notion Database to a Super Productivity Project.
 4. Set up your desired import statuses and complete status. *(If you pick a **Checkbox** property instead, unchecked rows import and completions simply toggle the box.)*
-5. *(Optional)* Select a **Task Notes Mapping** to pull in a database description property, or pull in the full Notion Page Body. *(Note: Pulling the full page body adds a slight delay to respect Notion's API rate limits).*
-6. *(Optional)* Enable **Subtask Sync** options to import Notion sub-items and/or page to-do checklists as native Super Productivity subtasks. *(Note: Checklist import fetches page blocks, which adds a slight delay to respect Notion's API rate limits. Checklist check-state syncs from Notion at import time; completing a checklist subtask in Super Productivity updates Notion live.)*
-7. Click **Save Mappings** and then **Sync Now** to pull in your tasks!
+5. *(Optional)* Select a **Start/Due Date Mapping** so tasks import with their Notion date already scheduled in Super Productivity.
+6. *(Optional)* Select a **Task Notes Mapping** to pull in a database description property, or pull in the full Notion Page Body. *(Note: Pulling the full page body adds a slight delay to respect Notion's API rate limits).*
+7. *(Optional)* Enable **Subtask Sync** options to import Notion sub-items and/or page to-do checklists as native Super Productivity subtasks. *(Note: Checklist import fetches page blocks, which adds a slight delay to respect Notion's API rate limits. Checklist check-state syncs from Notion at import time; completing a checklist subtask in Super Productivity updates Notion live.)*
+8. Click **Save Mappings** and then **Sync Now** to pull in your tasks!
 
 ---
 

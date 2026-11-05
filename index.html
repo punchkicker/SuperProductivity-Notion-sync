@@ -358,7 +358,7 @@
             btn.disabled = false;
 
             if (!config.mappings) config.mappings = [];
-            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', deleteStatus: '', notesMapping: '', pushNewTasks: false, defaultPushStatus: '', pushNotesMapping: '', syncSubItems: false, syncChecklist: false });
+            config.mappings.push({ notionDbId: '', spProjectId: '', statusProperty: 'Status', importStatuses: ['Not started'], completeStatus: 'Done', deleteStatus: '', notesMapping: '', dateMapping: '', pushNewTasks: false, defaultPushStatus: '', pushNotesMapping: '', syncSubItems: false, syncChecklist: false });
             renderMappings();
           });
 
@@ -445,6 +445,7 @@
             config.mappings[index].importStatuses = []; 
             config.mappings[index].completeStatus = '';
             config.mappings[index].notesMapping = '';
+            config.mappings[index].dateMapping = '';
             renderMappings();
           };
           
@@ -605,6 +606,23 @@
               notesPropContainer.innerHTML = `<label style="display:block; margin-bottom:4px; font-size:0.85em;">Task Notes Mapping (Optional):</label>`;
               notesPropContainer.appendChild(notesPropSelect);
               card.appendChild(notesPropContainer);
+
+              // Date property mapping (schedule SP tasks from a Notion date)
+              const dateProps = allProps.filter(prop => selectedDb.properties[prop].type === 'date');
+              if (dateProps.length > 0) {
+                const datePropSelect = document.createElement('select');
+                datePropSelect.style.width = '100%';
+                datePropSelect.style.marginBottom = '8px';
+                datePropSelect.innerHTML = `<option value="">-- None --</option>` +
+                  dateProps.map(prop => `<option value="${prop}" ${mapping.dateMapping === prop ? 'selected' : ''}>${prop}</option>`).join('');
+                datePropSelect.onchange = (e) => { config.mappings[index].dateMapping = e.target.value; };
+                
+                const datePropContainer = document.createElement('div');
+                datePropContainer.style.marginBottom = '8px';
+                datePropContainer.innerHTML = `<label style="display:block; margin-bottom:4px; font-size:0.85em;">Start/Due Date Mapping (Optional):</label>`;
+                datePropContainer.appendChild(datePropSelect);
+                card.appendChild(datePropContainer);
+              }
 
               // Subtask sync options
               const subtaskContainer = document.createElement('div');
