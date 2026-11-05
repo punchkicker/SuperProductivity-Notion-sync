@@ -104,6 +104,11 @@ function extractId(title) {
   return null;
 }
 
+function stripEmbeddedId(title) {
+  if (!title) return title;
+  return title.replace(new RegExp(ZW_PREFIX + '[\\u200B\\u200C]+' + ZW_SUFFIX), '').trim();
+}
+
 // --- Notion API Helper ---
 async function notionApi(endpoint, method, body, token) {
   const url = `https://api.notion.com/v1${endpoint}`;
@@ -146,6 +151,16 @@ function notionBlocksToMarkdown(blocks) {
   return bodyMd.trim();
 }
 
+// Marks a Notion to_do block as checked (used when a checklist subtask is completed in SP)
+async function checkOffNotionTodoBlock(blockId, titleText, token) {
+  await notionApi(`/blocks/${blockId}`, 'PATCH', {
+    to_do: {
+      rich_text: [{ type: 'text', text: { content: titleText || 'Subtask' } }],
+      checked: true
+    }
+  }, token);
+}
+
 async function runSync() {
   if (isSyncing) {
     sendLog('runSync skipped: already syncing');
@@ -176,6 +191,7 @@ async function runSync() {
     sendLog(`Fetched ${spTasks.length} SP tasks`);
     
     let importedCount = 0;
+    let subtaskCount = 0;
     let completedCount = 0;
     let resolvedOfflineCount = 0;
     let totalPushedCount = 0;
@@ -236,13 +252,50 @@ async function runSync() {
         }
         sendLog(`Fetched ${items.length} active items from Notion for mapping ${i + 1}`);
 
-        // 2. Import new tasks
-        for (const item of items) {
+        // 1b. Detect Notion sub-items (pages linked via a "Parent item" style relation)
+        const itemIds = new Set(items.map(it => it.id));
+        const parentPageOf = {};
+        if (mapping.syncSubItems) {
+          for (const item of items) {
+            for (const key in item.properties) {
+              const prop = item.properties[key];
+              if (prop && prop.type === 'relation' && /parent/i.test(key) && Array.isArray(prop.relation)) {
+                const rel = prop.relation.find(r => itemIds.has(r.id));
+                if (rel) {
+                  parentPageOf[item.id] = rel.id;
+                  break;
+                }
+              }
+            }
+          }
+          const subItemTotal = Object.keys(parentPageOf).length;
+          if (subItemTotal > 0) {
+            sendLog(`Detected ${subItemTotal} Notion sub-item(s) for mapping ${i + 1}`);
+          }
+        }
+
+        // Map Notion page ids to existing SP task ids (needed for subtask parenting)
+        const spIdByNotionPage = {};
+        for (const t of spTasks) {
+          const tIssueId = t.issueId || extractId(t.title);
+          if (tIssueId && tIssueId.startsWith(`notion_${mapping.notionDbId}_`)) {
+            spIdByNotionPage[tIssueId.split('_')[2]] = t.id;
+          }
+        }
+
+        // 2. Import new tasks (parents first so sub-items can attach to them)
+        const sortedItems = [...items].sort((a, b) => {
+          const aIsChild = parentPageOf[a.id] ? 1 : 0;
+          const bIsChild = parentPageOf[b.id] ? 1 : 0;
+          return aIsChild - bIsChild;
+        });
+
+        for (const item of sortedItems) {
           const issueIdStr = `notion_${mapping.notionDbId}_${item.id}`;
           const exists = spTasks.find(t => 
              (t.issueId === issueIdStr) || 
              (extractId(t.title) === issueIdStr)
-          );
+          ) || spIdByNotionPage[item.id];
 
           if (!exists) {
             let pageTitle = 'Untitled';
@@ -257,6 +310,7 @@ async function runSync() {
             }
 
             let taskNotes = `[Open in Notion](${item.url})`;
+            let pageBlocks = null;
             
             if (mapping.notesMapping) {
               if (mapping.notesMapping === '__PAGE_BODY__') {
@@ -265,6 +319,7 @@ async function runSync() {
                   const blockData = await notionApi(`/blocks/${item.id}/children?page_size=100`, 'GET', null, token);
                   sendLog(`Retrieved blocks: ${blockData?.results?.length || 0} items. Raw: ${JSON.stringify(blockData).substring(0, 150)}`);
                   if (blockData && blockData.results) {
+                    pageBlocks = blockData.results;
                     const md = notionBlocksToMarkdown(blockData.results);
                     sendLog(`Parsed markdown length: ${md.length} characters`);
                     if (md) taskNotes += `\n\n---\n\n${md}`;
@@ -287,13 +342,62 @@ async function runSync() {
               }
             }
 
+            // Sub-items attach to their parent's SP task (imported earlier in this loop)
+            let parentSpTaskId = null;
+            if (mapping.syncSubItems && parentPageOf[item.id]) {
+              parentSpTaskId = spIdByNotionPage[parentPageOf[item.id]] || null;
+              if (!parentSpTaskId) {
+                sendLog(`Parent page for sub-item "${pageTitle}" not found in SP, importing as top-level task`);
+              }
+            }
+
             try {
-              await PluginAPI.addTask({
+              const created = await PluginAPI.addTask({
                 title: embedId(pageTitle, issueIdStr),
                 projectId: mapping.spProjectId,
-                notes: taskNotes
+                notes: taskNotes,
+                ...(parentSpTaskId ? { parentId: parentSpTaskId } : {})
               });
+              const newSpTaskId = created && created.id ? created.id : null;
+              if (newSpTaskId) spIdByNotionPage[item.id] = newSpTaskId;
               importedCount++;
+
+              // Import page to-do checklist blocks as SP subtasks
+              if (mapping.syncChecklist && newSpTaskId) {
+                let blocks = pageBlocks;
+                if (!blocks) {
+                  try {
+                    sendLog(`Fetching blocks for checklist import (item ${item.id})...`);
+                    const blockData = await notionApi(`/blocks/${item.id}/children?page_size=100`, 'GET', null, token);
+                    blocks = (blockData && blockData.results) ? blockData.results : [];
+                    await delay(350); // Rate limit protection
+                  } catch (err) {
+                    sendLog(`Failed to fetch blocks for checklist import: ${err.message}`);
+                    blocks = [];
+                  }
+                }
+                const todoBlocks = blocks.filter(b => b.type === 'to_do');
+                for (const tb of todoBlocks) {
+                  const todoText = (tb.to_do.rich_text || []).map(t => t.plain_text).join('').trim();
+                  if (!todoText) continue;
+                  try {
+                    const sub = await PluginAPI.addTask({
+                      title: embedId(todoText, `notiontodo_${tb.id}`),
+                      parentId: newSpTaskId,
+                      projectId: mapping.spProjectId
+                    });
+                    subtaskCount++;
+                    if (tb.to_do.checked && sub && sub.id) {
+                      await PluginAPI.updateTask(sub.id, { isDone: true });
+                    }
+                  } catch (e) {
+                    sendLog(`Failed to add checklist subtask: ${e.message}`);
+                  }
+                }
+                if (todoBlocks.length > 0) {
+                  sendLog(`Imported ${todoBlocks.length} checklist subtask(s) for "${pageTitle}"`);
+                }
+              }
             } catch(e) {
               console.error('Failed to add SP task', e);
             }
@@ -368,7 +472,7 @@ async function runSync() {
 
         // 5. Push new SP tasks to Notion
         if (mapping.pushNewTasks && mapping.defaultPushStatus) {
-          const newSpTasks = spTasks.filter(t => t.projectId === mapping.spProjectId && !t.isDone && extractId(t.title) === null);
+          const newSpTasks = spTasks.filter(t => t.projectId === mapping.spProjectId && !t.isDone && !t.parentId && extractId(t.title) === null);
           
           if (newSpTasks.length > 0) {
             sendLog(`Found ${newSpTasks.length} new SP tasks to push to Notion.`);
@@ -425,6 +529,20 @@ async function runSync() {
                   }
                 }
                 
+                // Push local SP subtasks as Notion to-do checklist blocks
+                const childTasks = spTasks.filter(s => s.parentId === t.id && !extractId(s.title));
+                if (childTasks.length > 0) {
+                  const todoChildren = childTasks.map(s => ({
+                    object: 'block',
+                    type: 'to_do',
+                    to_do: {
+                      rich_text: [{ type: 'text', text: { content: stripEmbeddedId(s.title) } }],
+                      checked: !!s.isDone
+                    }
+                  }));
+                  createBody.children = (createBody.children || []).concat(todoChildren);
+                }
+                
                 const newPage = await notionApi('/pages', 'POST', createBody, token);
                 await delay(350); // Rate limit protection
                 
@@ -451,7 +569,7 @@ async function runSync() {
       try {
         iframeSource.postMessage({ 
           type: 'NOTION_SYNC_RESULT', 
-          message: `Sync complete: ${importedCount} imported, ${completedCount} marked complete locally, ${resolvedOfflineCount} completed in Notion, ${totalPushedCount} pushed to Notion.` 
+          message: `Sync complete: ${importedCount} imported (${subtaskCount} checklist subtasks), ${completedCount} marked complete locally, ${resolvedOfflineCount} completed in Notion, ${totalPushedCount} pushed to Notion.` 
         }, iframeOrigin);
       } catch (err) {}
     }
@@ -482,6 +600,19 @@ PluginAPI.registerHook(PluginAPI.Hooks.TASK_COMPLETE, async (payload) => {
   if (!task) return;
 
   let issueIdStr = extractId(task.title);
+
+  // Checklist subtask completed in SP -> check off the Notion to_do block
+  if (issueIdStr && issueIdStr.startsWith('notiontodo_')) {
+    const blockId = issueIdStr.substring('notiontodo_'.length);
+    try {
+      await checkOffNotionTodoBlock(blockId, stripEmbeddedId(task.title), token);
+      PluginAPI.showSnack({ msg: 'Notion checklist item checked!', type: 'SUCCESS' });
+    } catch (e) {
+      console.error('Failed to check off Notion to_do block', e);
+      // Fails silently if offline
+    }
+    return;
+  }
 
   if (issueIdStr && issueIdStr.startsWith('notion_')) {
     const parts = issueIdStr.split('_');
