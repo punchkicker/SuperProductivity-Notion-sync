@@ -202,7 +202,8 @@ async function runSync() {
         sendLog(`Processing mapping ${i + 1}/${mappings.length}...`);
         if (!mapping.notionDbId || !mapping.spProjectId) continue;
         
-        const statusProp = mapping.statusProperty || 'Status';
+        // Address the status property by ID so unnamed properties work (name fallback for older configs)
+        const statusProp = mapping.statusPropertyId || mapping.statusProperty || 'Status';
         const importStatuses = mapping.importStatuses && mapping.importStatuses.length > 0 
           ? mapping.importStatuses 
           : (mapping.importStatus ? [mapping.importStatus] : ['Not started']);
@@ -660,7 +661,8 @@ PluginAPI.registerHook(PluginAPI.Hooks.TASK_COMPLETE, async (payload) => {
     const mapping = (currentConfig.mappings || []).find(m => m.notionDbId === dbId);
     if (!mapping) return;
     
-    const statusProp = mapping.statusProperty || 'Status';
+    // Address the status property by ID so unnamed properties work (name fallback for older configs)
+    const statusProp = mapping.statusPropertyId || mapping.statusProperty || 'Status';
     const completeStatus = mapping.completeStatus || 'Done';
 
     try {
