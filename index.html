@@ -441,6 +441,7 @@
           dbSelect.onchange = (e) => { 
             config.mappings[index].notionDbId = e.target.value;
             config.mappings[index].statusProperty = '';
+            config.mappings[index].statusPropertyId = '';
             config.mappings[index].statusPropertyType = '';
             config.mappings[index].importStatuses = []; 
             config.mappings[index].completeStatus = '';
@@ -469,19 +470,32 @@
             const statusPropSelect = document.createElement('select');
             statusPropSelect.style.width = '100%';
             statusPropSelect.style.marginBottom = '8px';
+            // Use Notion property IDs as values so properties with empty/symbol-only names work
             statusPropSelect.innerHTML = `<option value="">-- Select Status Property --</option>` + 
-              validProps.map(prop => `<option value="${prop}" ${mapping.statusProperty === prop ? 'selected' : ''}>${prop} (${selectedDb.properties[prop].type})</option>`).join('');
+              validProps.map(prop => {
+                const propId = selectedDb.properties[prop].id;
+                const label = (prop || '[Unnamed]') + ' (' + selectedDb.properties[prop].type + ') ';
+                const isSelected = mapping.statusPropertyId ? mapping.statusPropertyId === propId : mapping.statusProperty === prop;
+                return `<option value="${propId}" ${isSelected ? 'selected' : ''}>${label}</option>`;
+              }).join('');
             statusPropSelect.onchange = (e) => { 
-              config.mappings[index].statusProperty = e.target.value; 
-              config.mappings[index].statusPropertyType = e.target.value ? selectedDb.properties[e.target.value].type : '';
+              const selProp = validProps.find(p => selectedDb.properties[p].id === e.target.value) || '';
+              config.mappings[index].statusPropertyId = e.target.value;
+              config.mappings[index].statusProperty = selProp;
+              config.mappings[index].statusPropertyType = selProp ? selectedDb.properties[selProp].type : '';
               config.mappings[index].importStatuses = []; 
               config.mappings[index].completeStatus = '';
               renderMappings();
             };
             card.appendChild(statusPropSelect);
 
-            if (mapping.statusProperty && selectedDb.properties[mapping.statusProperty]) {
-              const propConfig = selectedDb.properties[mapping.statusProperty];
+            // Resolve the selected status property by ID (fall back to name for older configs)
+            const statusKey = mapping.statusPropertyId
+              ? Object.keys(selectedDb.properties).find(p => selectedDb.properties[p].id === mapping.statusPropertyId)
+              : (mapping.statusProperty && selectedDb.properties[mapping.statusProperty] ? mapping.statusProperty : null);
+
+            if (statusKey) {
+              const propConfig = selectedDb.properties[statusKey];
               const options = propConfig[propConfig.type]?.options || [];
 
               if (propConfig.type === 'checkbox') {
