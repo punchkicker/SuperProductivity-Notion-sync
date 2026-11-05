@@ -347,6 +347,22 @@ async function runSync() {
               }
             }
 
+            // Map a Notion date property to the SP task's scheduled date
+            const dueFields = {};
+            if (mapping.dateMapping) {
+              const dp = item.properties[mapping.dateMapping];
+              if (dp && dp.type === 'date' && dp.date && dp.date.start) {
+                const start = dp.date.start;
+                if (start.length > 10) {
+                  // Date-time value -> schedule with time
+                  dueFields.dueWithTime = new Date(start).getTime();
+                } else {
+                  // Date-only value -> schedule for that day
+                  dueFields.dueDay = start;
+                }
+              }
+            }
+
             // Sub-items attach to their parent's SP task (imported earlier in this loop)
             let parentSpTaskId = null;
             if (mapping.syncSubItems && parentPageOf[item.id]) {
@@ -361,6 +377,7 @@ async function runSync() {
                 title: embedId(pageTitle, issueIdStr),
                 projectId: mapping.spProjectId,
                 notes: taskNotes,
+                ...dueFields,
                 ...(parentSpTaskId ? { parentId: parentSpTaskId } : {})
               });
               const newSpTaskId = created && created.id ? created.id : null;
@@ -537,6 +554,16 @@ async function runSync() {
                     createBody.properties[mapping.pushNotesMapping] = {
                       rich_text: [{ type: 'text', text: { content: safeNotes } }]
                     };
+                  }
+                }
+                
+                // Push the SP task's scheduled date to the mapped Notion date property
+                if (mapping.dateMapping) {
+                  let isoDate = null;
+                  if (t.dueWithTime) isoDate = new Date(t.dueWithTime).toISOString();
+                  else if (t.dueDay) isoDate = t.dueDay;
+                  if (isoDate) {
+                    createBody.properties[mapping.dateMapping] = { date: { start: isoDate } };
                   }
                 }
                 
