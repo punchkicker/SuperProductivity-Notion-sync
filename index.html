@@ -462,7 +462,7 @@
           if (selectedDb && selectedDb.properties) {
             const validProps = Object.keys(selectedDb.properties).filter(key => {
               const type = selectedDb.properties[key].type;
-              return type === 'status' || type === 'select';
+              return type === 'status' || type === 'select' || type === 'checkbox';
             });
 
             const statusPropSelect = document.createElement('select');
@@ -482,6 +482,14 @@
             if (mapping.statusProperty && selectedDb.properties[mapping.statusProperty]) {
               const propConfig = selectedDb.properties[mapping.statusProperty];
               const options = propConfig[propConfig.type]?.options || [];
+
+              if (propConfig.type === 'checkbox') {
+                const cbInfo = document.createElement('p');
+                cbInfo.style.fontSize = '0.85em';
+                cbInfo.style.lineHeight = '1.4';
+                cbInfo.textContent = 'Checkbox property selected: unchecked rows import as tasks. Checking a task off in Super Productivity checks the box in Notion, and checking the box in Notion marks the task done here.';
+                card.appendChild(cbInfo);
+              } else {
 
               const importLabel = document.createElement('label');
               importLabel.textContent = 'Import Statuses (Select multiple):';
@@ -577,6 +585,7 @@
                 options.map(opt => `<option value="${opt.name}" ${mapping.deleteStatus === opt.name ? 'selected' : ''}>${opt.name}</option>`).join('');
               deleteSelect.onchange = (e) => { config.mappings[index].deleteStatus = e.target.value; };
               card.appendChild(deleteSelect);
+              }
               
               const notesPropSelect = document.createElement('select');
               notesPropSelect.style.width = '100%';
@@ -660,6 +669,7 @@
               pushContainer.appendChild(pushLabel);
               
               if (mapping.pushNewTasks) {
+                if (mapping.statusPropertyType !== 'checkbox') {
                 const pushStatusLabel = document.createElement('label');
                 pushStatusLabel.textContent = 'Default Notion Status:';
                 pushStatusLabel.style.fontSize = '0.85em';
@@ -671,6 +681,7 @@
                   options.map(opt => `<option value="${opt.name}" ${mapping.defaultPushStatus === opt.name ? 'selected' : ''}>${opt.name}</option>`).join('');
                 pushStatusSelect.onchange = (e) => { config.mappings[index].defaultPushStatus = e.target.value; };
                 pushContainer.appendChild(pushStatusSelect);
+                }
                 
                 const pushNotesLabel = document.createElement('label');
                 pushNotesLabel.textContent = 'Push Notes Mapping (Optional):';
